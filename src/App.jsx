@@ -96,6 +96,10 @@ const storeSet = async (key, val) => {
 const remainOf = (t, now) => t.setStart + t.setDuration * 60000 - now;
 const tstateOf = (t, now) => { const r = remainOf(t, now); if (r <= 0) return "over"; if (r <= 600000) return "soon"; return "ok"; };
 const fmt = (ms) => { const a = Math.abs(ms); const m = Math.floor(a / 60000); const s = Math.floor((a % 60000) / 1000); return `${m}:${String(s).padStart(2, "0")}`; };
+// 同伴: 終了時刻を「今日の22:00」に固定（既に22時を過ぎていれば暫定で1時間）
+const dohanEndMs = (from) => { const d = new Date(from); d.setHours(22, 0, 0, 0); const end = d.getTime(); return end > from ? end : from + 3600000; };
+// 同伴で提供できるサービス（周知表示のみ・料金加算なし）
+const DOHAN_SERVICES = ["VIPルーム", "フルーツ盛り", "飲み放題"];
 function useNow(active) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { if (!active) return; const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, [active]);
@@ -284,7 +288,12 @@ export default function App() {
   };
   const ordQty = (tableId, oid, d) => upd(tableId, t => ({ ...t, orders: t.orders.map(o => o.id === oid ? { ...o, qty: Math.max(1, o.qty + d) } : o) }));
   const delOrder = (tableId, oid) => upd(tableId, t => ({ ...t, orders: t.orders.filter(o => o.id !== oid) }));
-  function openTable(tableId) { setTs(s => ({ ...s, [tableId]: { active: true, setType: 4000, setDuration: 60, setStart: Date.now(), customers: [], casts: [], seats: [], orders: [] } })); }
+  function openTable(tableId, dohan = false) {
+    const now = Date.now();
+    // 同伴なら終了を今日の22:00に合わせて持ち時間を算出（＝22時までがワンタイム）
+    const setDuration = dohan ? Math.max(1, Math.round((dohanEndMs(now) - now) / 60000)) : 60;
+    setTs(s => ({ ...s, [tableId]: { active: true, setType: 4000, setDuration, setStart: now, dohan, customers: [], casts: [], seats: [], orders: [] } }));
+  }
   function closeTable(tableId) {
     const t = ts[tableId]; const total = tableTotal(t);
     const tRef = tables.find(x => x.id === tableId);
@@ -391,7 +400,10 @@ function FloorCard({ tt, disp, t, castById, onClick }) {
   return (
     <button onClick={onClick} style={{ background: active ? "#141418" : "#0d0d10", border: `1.5px solid ${red ? "#a13b3b" : active ? GOLD : "#1c1c22"}`, boxShadow: red ? "0 0 14px rgba(180,60,60,.35)" : "none" }} className="rounded-2xl p-3 text-left min-h-[120px] flex flex-col">
       <div className="flex items-center justify-between mb-1">
-        <span style={{ color: active ? "#fff" : "#555", fontFamily: "Georgia,serif" }} className="text-lg font-bold">{disp.label}</span>
+        <span className="flex items-center gap-1">
+          <span style={{ color: active ? "#fff" : "#555", fontFamily: "Georgia,serif" }} className="text-lg font-bold">{disp.label}</span>
+          {active && t?.dohan && <span style={{ background: "rgba(201,166,78,.2)", color: GOLD }} className="text-[9px] px-1.5 py-0.5 rounded-full font-bold">同伴</span>}
+        </span>
         {active ? (
           <span style={{ color: red ? "#ff6a6a" : "#9a9aa2" }} className="text-[11px] font-bold flex items-center gap-0.5"><Clock size={11} />{tstate === "over" ? "+" : ""}{fmt(remainOf(t, now))}</span>
         ) : <span className="text-[10px] text-zinc-600">空席</span>}
@@ -485,6 +497,7 @@ function Detail(p) {
         <div className="flex items-center gap-3">
           <button onClick={close}><X size={22} color="#888" /></button>
           <span style={{ fontFamily: "Georgia,serif", color: GOLD }} className="text-xl font-bold">{disp.label}</span>
+          {active && t?.dohan && <span style={{ background: "rgba(201,166,78,.2)", border: `1px solid ${GOLD}`, color: GOLD }} className="text-[10px] px-2 py-0.5 rounded-full font-bold">同伴</span>}
           {active && <DetailClock t={t} />}
         </div>
         {active && <button onClick={() => closeTable(tableId)} style={{ background: "#1c1c22", color: GOLD }} className="text-xs px-3 py-1.5 rounded-lg font-bold">会計</button>}
@@ -493,10 +506,24 @@ function Detail(p) {
       {!active ? (
         <div className="p-10 text-center">
           <p className="text-zinc-500 mb-4 text-sm">この卓は空席です（定員 {disp.cap}名）</p>
-          <button onClick={() => openTable(tableId)} style={{ background: GOLD, color: "#000" }} className="px-6 py-3 rounded-xl font-bold">卓を開ける</button>
+          <div className="flex flex-col gap-3 items-center">
+            <button onClick={() => openTable(tableId)} style={{ background: GOLD, color: "#000" }} className="px-6 py-3 rounded-xl font-bold w-60">卓を開ける</button>
+            <button onClick={() => openTable(tableId, true)} style={{ background: "#141418", border: `1.5px solid ${GOLD}`, color: GOLD }} className="px-6 py-3 rounded-xl font-bold w-60">🤝 同伴で開ける（22時まで）</button>
+          </div>
         </div>
       ) : (
         <div className="p-4 space-y-5 pb-16">
+          {t.dohan && (
+            <div style={{ background: "rgba(201,166,78,.1)", border: `1px solid ${GOLD}` }} className="rounded-2xl p-3">
+              <div className="text-[11px] font-bold flex items-center gap-1" style={{ color: GOLD }}>🤝 同伴サービス（本日提供OK・周知）</div>
+              <div className="flex gap-1.5 mt-2 flex-wrap">
+                {DOHAN_SERVICES.map(s => (
+                  <span key={s} style={{ background: "#1c1c22", border: `1px solid ${GOLD}`, color: "#e8d29a" }} className="text-[11px] rounded-full px-2.5 py-1 font-bold">{s}</span>
+                ))}
+              </div>
+              <div className="text-[10px] text-zinc-500 mt-1.5">※周知のみ（料金加算なし・終了は22時）</div>
+            </div>
+          )}
           <Section title="座席（誰の隣に誰）">
             <div className="flex items-stretch gap-1 overflow-x-auto pb-2">
               {t.seats.map((s, i) => {
@@ -563,7 +590,7 @@ function Detail(p) {
           <Section title="セット">
             <div className="flex items-center gap-1.5 mb-2 flex-wrap">
               <span className="text-[10px] text-zinc-500">料金</span>
-              {[4000, 4500, 5000, 5500].map(v => (
+              {[3500, 4000, 4500, 5000, 5500].map(v => (
                 <button key={v} onClick={() => setSetType(tableId, v)} style={{ background: t.setType === v ? GOLD : "#1c1c22", color: t.setType === v ? "#000" : "#888" }} className="text-[11px] rounded-lg px-2 py-1 font-bold">{yen(v)}</button>
               ))}
             </div>
