@@ -2,7 +2,11 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+// GitHub Pages などサブパス配信時は VITE_BASE=/ANELA-2/ を指定（Vercel等は未指定で従来どおり "/"）
+const BASE = process.env.VITE_BASE || "/";
+
 export default defineConfig({
+  base: BASE,
   plugins: [
     react(),
     VitePWA({
@@ -17,8 +21,8 @@ export default defineConfig({
         display: "standalone",
         orientation: "any",
         lang: "ja",
-        start_url: "/",
-        scope: "/",
+        start_url: BASE,
+        scope: BASE,
         icons: [
           {
             src: "pwa-192.png",
