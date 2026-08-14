@@ -13,9 +13,9 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "apple-touch-icon.png"],
       manifest: {
-        name: "viverce つけ回し",
-        short_name: "viverce",
-        description: "キャバクラ卓管理・付け回し（viverce）",
+        name: "VIVACE つけ回し",
+        short_name: "VIVACE",
+        description: "キャバクラ卓管理・付け回し（VIVACE）",
         theme_color: "#000000",
         background_color: "#000000",
         display: "standalone",

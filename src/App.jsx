@@ -3,9 +3,9 @@ import { LayoutGrid, Sparkles, Sun, Crown, Plus, X, Clock, AlertTriangle, Chevro
 
 const GOLD = "#c9a64e";
 const TEAL = "#3fb6b0";
-// URL パラメータで店舗を切り替え: ?store=viverce or ?store=ANELA など
-const URL_STORE = "ANELA";
-const STORE_KEY = "ANELA-v1";
+// URL パラメータで店舗を切り替え: ?store=ANELA など（未指定は VIVACE）
+const URL_STORE = (typeof location !== "undefined" && new URLSearchParams(location.search).get("store")) || "VIVACE";
+const STORE_KEY = URL_STORE + "-v1";
 const GENRES = ["綺麗", "可愛い", "おもしろい"];
 const GENRE_COLOR = { "綺麗": "#7aa7ff", "可愛い": "#ff8fc4", "おもしろい": "#f0b54a" };
 
@@ -77,7 +77,8 @@ const ANELA_SEED_CASTS = [
   status: "出勤",
 }));
 
-const SEED_CASTS = URL_STORE === "ANELA" ? ANELA_SEED_CASTS : DEFAULT_SEED_CASTS;
+// VIVACE（デフォルト）は空の名簿からスタート（設定タブから登録）。?store=ANELA のときのみ ANELA 名簿をシード。
+const SEED_CASTS = URL_STORE === "ANELA" ? ANELA_SEED_CASTS : [];
 
 const yen = (n) => "¥" + (n || 0).toLocaleString("ja-JP");
 
