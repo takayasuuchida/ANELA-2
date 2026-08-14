@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { LayoutGrid, Sparkles, Sun, Crown, Plus, X, Clock, AlertTriangle, ChevronLeft, ChevronRight, Trash2, Wand2, UserPlus, Link2, Users } from "lucide-react";
+import { LayoutGrid, Sparkles, Sun, Crown, Plus, X, Clock, AlertTriangle, ChevronLeft, ChevronRight, Trash2, Wand2, UserPlus, Link2, Users, Star } from "lucide-react";
 
 const GOLD = "#c9a64e";
 const TEAL = "#3fb6b0";
@@ -268,8 +268,10 @@ export default function App() {
   function moveSeat(tableId, idx, dir) { upd(tableId, t => { const a = [...t.seats]; const j = idx + dir; if (j < 0 || j >= a.length) return t; [a[idx], a[j]] = [a[j], a[idx]]; return { ...t, seats: a }; }); }
   function addCustomer(tableId, name) {
     const id = "cu" + Math.random().toString(36).slice(2, 7);
-    upd(tableId, t => ({ ...t, customers: [...t.customers, { id, name: name || "客", isBoss: t.customers.length === 0, pref: "綺麗" }], seats: [...t.seats, { k: "cust", id }] }));
+    upd(tableId, t => ({ ...t, customers: [...t.customers, { id, name: name || "客", isBoss: t.customers.length === 0, pref: "綺麗", nominated: false }], seats: [...t.seats, { k: "cust", id }] }));
   }
+  // 人数を指定して客をまとめて登録（1人ずつ新規登録しない）。①番は自動でボス。
+  const toggleNominated = (tableId, id) => upd(tableId, t => ({ ...t, customers: t.customers.map(c => c.id === id ? { ...c, nominated: !c.nominated } : c) }));
   function removeCustomer(tableId, custId) {
     upd(tableId, t => ({ ...t, customers: t.customers.filter(c => c.id !== custId), casts: t.casts.filter(a => a.customerId !== custId), seats: t.seats.filter(s => s.id !== custId && !(s.k === "cast" && t.casts.find(a => a.castId === s.id)?.customerId === custId)) }));
   }
@@ -293,6 +295,14 @@ export default function App() {
     // 同伴なら終了を今日の22:00に合わせて持ち時間を算出（＝22時までがワンタイム）
     const setDuration = dohan ? Math.max(1, Math.round((dohanEndMs(now) - now) / 60000)) : 60;
     setTs(s => ({ ...s, [tableId]: { active: true, setType: 4000, setDuration, setStart: now, dohan, customers: [], casts: [], seats: [], orders: [] } }));
+  }
+  // 来店人数を指定して一発で開く（人数分の客①〜を自動作成・①番はボス）
+  function openTableGuests(tableId, n, dohan = false) {
+    const now = Date.now();
+    const setDuration = dohan ? Math.max(1, Math.round((dohanEndMs(now) - now) / 60000)) : 60;
+    const customers = Array.from({ length: n }, (_, i) => ({ id: "cu" + Math.random().toString(36).slice(2, 7) + i, name: "客" + (i + 1), isBoss: i === 0, pref: "綺麗", nominated: false }));
+    const seats = customers.map(c => ({ k: "cust", id: c.id }));
+    setTs(s => ({ ...s, [tableId]: { active: true, setType: 4000, setDuration, setStart: now, dohan, customers, casts: [], seats, orders: [] } }));
   }
   function closeTable(tableId) {
     const t = ts[tableId]; const total = tableTotal(t);
@@ -331,8 +341,8 @@ export default function App() {
       {sel && tables.find(x => x.id === sel) && (
         <Detail key={sel} {...{
           tableId: sel, t: ts[sel], disp: dispTable(tables.find(x => x.id === sel) || { id: sel, label: sel, cap: 0 }), close: () => setSel(null),
-          castById, served, tableTotal, openTable, closeTable, addCustomer, removeCustomer, setBoss, setPref, setSetType, setDur,
-          autoTable, autoCustomer, removeCast, moveSeat, setPick, addOrder, ordQty, delOrder,
+          castById, served, tableTotal, openTable, openTableGuests, closeTable, addCustomer, removeCustomer, setBoss, setPref, setSetType, setDur,
+          autoTable, autoCustomer, removeCast, moveSeat, setPick, addOrder, ordQty, delOrder, toggleNominated,
         }} />
       )}
 
@@ -470,7 +480,8 @@ function Floor({ visibleTables, dispTable, tables, ts, castById, setSel, merges,
 }
 
 function Detail(p) {
-  const { tableId, t, disp, close, castById, served, tableTotal, openTable, closeTable, addCustomer, removeCustomer, setBoss, setPref, setSetType, setDur, autoTable, autoCustomer, removeCast, moveSeat, setPick, addOrder, ordQty, delOrder } = p;
+  const { tableId, t, disp, close, castById, served, tableTotal, openTable, openTableGuests, closeTable, addCustomer, removeCustomer, setBoss, setPref, setSetType, setDur, autoTable, autoCustomer, removeCast, moveSeat, setPick, addOrder, ordQty, delOrder, toggleNominated } = p;
+  const [dohanMode, setDohanMode] = useState(false);
   const cnameRef = useRef(null);
   const chLabelRef = useRef(null);
   const chPriceRef = useRef(null);
@@ -504,12 +515,19 @@ function Detail(p) {
       </div>
 
       {!active ? (
-        <div className="p-10 text-center">
-          <p className="text-zinc-500 mb-4 text-sm">この卓は空席です（定員 {disp.cap}名）</p>
-          <div className="flex flex-col gap-3 items-center">
-            <button onClick={() => openTable(tableId)} style={{ background: GOLD, color: "#000" }} className="px-6 py-3 rounded-xl font-bold w-60">卓を開ける</button>
-            <button onClick={() => openTable(tableId, true)} style={{ background: "#141418", border: `1.5px solid ${GOLD}`, color: GOLD }} className="px-6 py-3 rounded-xl font-bold w-60">🤝 同伴で開ける（22時まで）</button>
+        <div className="p-8 text-center">
+          <p className="text-zinc-500 mb-1 text-sm">この卓は空席です（定員 {disp.cap}名）</p>
+          <p className="text-zinc-500 mb-4 text-xs">来店人数をタップ → その人数分の席を一発作成（名前は後で・①番はボス）</p>
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <button onClick={() => setDohanMode(false)} style={{ background: !dohanMode ? GOLD : "#1c1c22", color: !dohanMode ? "#000" : "#888" }} className="px-4 py-1.5 rounded-full text-xs font-bold">通常</button>
+            <button onClick={() => setDohanMode(true)} style={{ background: dohanMode ? GOLD : "#1c1c22", color: dohanMode ? "#000" : "#888" }} className="px-4 py-1.5 rounded-full text-xs font-bold">🤝 同伴（22時まで）</button>
           </div>
+          <div className="grid grid-cols-4 gap-2 max-w-xs mx-auto">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
+              <button key={n} onClick={() => openTableGuests(tableId, n, dohanMode)} style={{ background: "#141418", border: `1.5px solid ${GOLD}`, color: GOLD }} className="py-4 rounded-xl font-bold text-lg">{n}名</button>
+            ))}
+          </div>
+          <button onClick={() => openTable(tableId, dohanMode)} className="mt-4 text-xs text-zinc-500 underline">人数未定で開ける（後で追加）</button>
         </div>
       ) : (
         <div className="p-4 space-y-5 pb-16">
@@ -560,7 +578,13 @@ function Detail(p) {
                         <span className="font-bold text-sm">{cust.name}</span>
                         {cust.isBoss && <span style={{ color: GOLD }} className="text-[10px]">ボス</span>}
                       </button>
-                      <button onClick={() => removeCustomer(tableId, cust.id)}><Trash2 size={14} color="#555" /></button>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => toggleNominated(tableId, cust.id)} className="flex items-center gap-1" style={{ color: cust.nominated ? GOLD : "#555" }}>
+                          <Star size={14} color={cust.nominated ? GOLD : "#3a3a42"} fill={cust.nominated ? GOLD : "none"} />
+                          <span className="text-[10px] font-bold">指名</span>
+                        </button>
+                        <button onClick={() => removeCustomer(tableId, cust.id)}><Trash2 size={14} color="#555" /></button>
+                      </div>
                     </div>
                     <div className="flex items-center gap-1.5 mb-2">
                       <span className="text-[10px] text-zinc-500">好み</span>
